@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Letta Tether</title>
+<style>
+  :root { --bg:#f6f4ef; --card:#fff; --ink:#22231f; --dim:#6b6d64; --line:#e3dfd4; --go:#2ea05a; --work:#3478dc; --wait:#e6aa28; --off:#8c8c8c; --bad:#cd3c3c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:620px; margin:40px auto; padding:0 20px; }
+  h1 { font-size:26px; margin:0 0 4px; } h2 { font-size:19px; margin:0 0 10px; }
+  .sub { color:var(--dim); margin:0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:22px 24px; margin-bottom:16px; }
+  .steps { display:flex; gap:6px; margin-bottom:18px; }
+  .steps span { flex:1; height:5px; border-radius:3px; background:var(--line); }
+  .steps span.on { background:var(--go); }
+  p { margin:0 0 12px; } ul { margin:0 0 12px; padding-left:22px; } li { margin-bottom:6px; }
+  button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:9px; padding:9px 18px; cursor:pointer; }
+  button.primary { background:var(--go); border-color:var(--go); color:#fff; font-weight:600; }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; align-items:center; }
+  .row .grow { flex:1; }
+  label.choice { display:block; border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px; cursor:pointer; }
+  label.choice:has(input:checked) { border-color:var(--go); background:#f3faf5; }
+  label.choice small { display:block; color:var(--dim); margin-left:24px; }
+  input[type=text] { font:inherit; width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:9px; }
+  .bar { height:10px; background:var(--line); border-radius:5px; overflow:hidden; margin:10px 0; }
+  .bar div { height:100%; background:var(--go); width:0; transition:width .3s; }
+  .code { font:600 28px/1 ui-monospace, monospace; letter-spacing:3px; padding:14px; text-align:center; background:var(--bg); border-radius:10px; margin:10px 0; }
+  .dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:8px; vertical-align:middle; }
+  .err { color:var(--bad); }
+  .dim { color:var(--dim); font-size:14px; }
+  .hidden { display:none; }
+  .status-line { font-size:20px; font-weight:600; }
+  a { color:var(--work); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Letta Tether</h1>
+  <p class="sub">Run your Letta agents on your own computer.</p>
+  <div class="steps" id="steps"></div>
+
+  <!-- 1. what this is -->
+  <section class="card step" data-step="0">
+    <h2>What this does</h2>
+    <p>Your Letta agent has two parts:</p>
+    <ul>
+      <li><b>Its memory and conversations.</b> These live in your Letta account, like always. Nothing here changes them or moves them.</li>
+      <li><b>A computer to think and work on.</b> When your agent runs a command, reads a file or uses a tool, it happens on some computer. This app lets it be <b>this one</b>, instead of one you rent from Letta.</li>
+    </ul>
+    <p>Two things to know:</p>
+    <ul>
+      <li>Your agent can use this computer while it's connected. Only connect agents you trust.</li>
+      <li>When this computer is off or asleep, your agent can't use it. Messages wait and get answered when it's back.</li>
+    </ul>
+    <p class="dim">Letta Tether isn't made by Letta. It's free, and everything it does is <a href="https://github.com/tanner-caffrey/letta-tether" target="_blank">public on GitHub</a>.</p>
+    <div class="row"><button class="primary" onclick="go(1)">Okay, set it up</button></div>
+  </section>
+
+  <!-- 2. which Letta -->
+  <section class="card step" data-step="1">
+    <h2>Get Letta ready</h2>
+    <div id="pick">
+      <p id="pickIntro"></p>
+      <label class="choice" id="existingChoice"><input type="radio" name="inst" value="existing"> <b>Use the Letta you already have</b> <span id="existingVer" class="dim"></span>
+        <small>The one you installed yourself. It updates when you update it.</small>
+        <small id="existingOld" class="hidden" style="color:#a86b00">There's a newer Letta (<span class="latestV"></span>). You can update it from Letta itself, then press Restart in Letta Tether. An older one usually works fine too.</small></label>
+      <label class="choice"><input type="radio" name="inst" value="bundled"> <b>Download Letta for me</b> <span id="bundledVer" class="dim"></span>
+        <small>Letta's official all-in-one version, about 80 MB, kept in Letta Tether's own folder. You don't need to install anything else.</small>
+        <small id="bundledNote" class="hidden" style="color:#6b6d64">This version comes out a little after the newest Letta (it's <span class="bundledV"></span>, newest is <span class="latestV"></span>).</small></label>
+    </div>
+    <div id="dl" class="hidden">
+      <p id="dlText">Downloading Letta…</p>
+      <div class="bar"><div id="dlBar"></div></div>
+      <p class="dim">This can take a few minutes. You can leave this page open.</p>
+    </div>
+    <p id="dlErr" class="err hidden"></p>
+    <div class="row"><button onclick="go(0)">Back</button><span class="grow"></span><button class="primary" id="instBtn" onclick="prepare()">Next</button></div>
+  </section>
+
+  <!-- 3. sign in -->
+  <section class="card step" data-step="2">
+    <h2>Sign in to Letta</h2>
+    <div id="siIdle"><p>This connects the app to your Letta account, the same one you use at chat.letta.com. Your browser will open a Letta page; check the code matches, then approve it.</p></div>
+    <div id="siWait" class="hidden">
+      <p>A Letta page should have opened in your browser. Approve it there. The code should match:</p>
+      <div class="code" id="siCode"></div>
+      <p class="dim">Didn't open? <a id="siLink" target="_blank">Open the sign-in page</a></p>
+    </div>
+    <p id="siDone" class="hidden">✓ Signed in.</p>
+    <p id="siErr" class="err hidden"></p>
+    <div class="row"><button onclick="go(1)">Back</button><span class="grow"></span><button class="primary" id="siBtn" onclick="signIn()">Sign in</button></div>
+  </section>
+
+  <!-- 4. name + autostart -->
+  <section class="card step" data-step="3">
+    <h2>Name this computer</h2>
+    <p>This is the name you'll see in Letta when you choose where your agent runs.</p>
+    <input type="text" id="name" maxlength="80">
+    <p class="dim" style="margin-top:6px">Already running Letta by hand on this computer? Use a different name here so the two don't clash.</p>
+    <label class="choice" style="margin-top:14px"><input type="checkbox" id="auto" checked> <b>Start when I log in</b>
+      <small>So your agent can use this computer without you opening anything. You can turn it off here, or in Task Manager → Startup.</small></label>
+    <p id="saveErr" class="err hidden"></p>
+    <div class="row"><button onclick="go(2)">Back</button><span class="grow"></span><button class="primary" onclick="finish()">Connect</button></div>
+  </section>
+
+  <!-- 5. done / settings -->
+  <section class="card step" data-step="4">
+    <div class="status-line"><span class="dot" id="dot"></span><span id="stText"></span></div>
+    <p class="dim" id="stHelp"></p>
+    <div id="howto" class="hidden">
+      <p><b>To use it:</b> open your agent at chat.letta.com, click the computer button at the bottom left of the message box, and pick <b id="howName"></b>.</p>
+      <p class="dim">Look for the small ring icon near your clock. Click it any time to stop, start, or come back here. On Windows it may be hidden under the little ^ arrow; you can drag it out so it's always showing.</p>
+    </div>
+    <div class="row"><button id="stopBtn" onclick="post('stop')">Stop</button><button id="startBtn" class="primary" onclick="post('start')">Start</button></div>
+  </section>
+
+  <section class="card step" data-step="4">
+    <h2>Settings</h2>
+    <p>Computer name</p>
+    <input type="text" id="name2" maxlength="80">
+    <label class="choice" style="margin-top:14px"><input type="checkbox" id="auto2"> <b>Start when I log in</b></label>
+    <p style="margin-top:14px">Which Letta to run</p>
+    <label class="choice" id="existingChoice2"><input type="radio" name="inst2" value="existing"> The Letta you installed <span class="dim" id="existVer2"></span>
+      <small id="existingOld2" class="hidden" style="color:#a86b00">Newer Letta available (<span class="latestV"></span>). Update it from Letta, then press Restart.</small></label>
+    <label class="choice"><input type="radio" name="inst2" value="bundled"> The one Letta Tether downloaded <span class="dim" id="privVer2"></span></label>
+    <p class="dim">Log file: <span id="logPath"></span></p>
+    <p id="saveErr2" class="err hidden"></p>
+    <div class="row"><button onclick="update()" id="updBtn">Update downloaded Letta</button><button onclick="restart()">Restart</button><button onclick="signIn(true)">Sign in again</button><span class="grow"></span><button class="primary" onclick="saveSettings()">Save</button></div>
+    <div id="dl2" class="hidden"><div class="bar"><div id="dlBar2"></div></div><p class="dim" id="dlText2"></p></div>
+  </section>
+
+  <section class="card step" data-step="4">
+    <h2>Remove Letta Tether</h2>
+    <p>This stops Letta on this computer and removes Letta Tether:</p>
+    <ul id="unList"></ul>
+    <p>It <b>doesn't</b> touch:</p>
+    <ul id="keepList"></ul>
+    <p class="dim" id="unMac"></p>
+    <p id="unErr" class="err hidden"></p>
+    <div class="row"><span class="grow"></span><button id="unBtn" onclick="removeTether()">Remove Letta Tether…</button></div>
+  </section>
+  <section class="card hidden" id="goneCard">
+    <h2>Letta Tether is removed</h2>
+    <p>You can close this page. Your agents are still in your Letta account, and will use this computer again if you reinstall.</p>
+  </section>
+</main>
+<script>
+const T = new URLSearchParams(location.search).get("t");
+const $ = id => document.getElementById(id);
+let S = null, step = 0, picked = false, gone = false;
+const WORDS = {
+  connected: ["Connected", "Your agent can use this computer.", "var(--go)"],
+  working: ["Working", "Your agent is doing something on this computer right now.", "var(--work)"],
+  starting: ["Starting…", "", "var(--wait)"],
+  reconnecting: ["Reconnecting…", "Lost the connection to Letta. Trying again; this usually fixes itself.", "var(--wait)"],
+  stopped: ["Stopped", "Your agent can't use this computer until you press Start.", "var(--off)"],
+  error: ["Something's wrong", "Letta couldn't start. Try signing in again below; if that doesn't fix it, open the log file and share it.", "var(--bad)"],
+};
+
+async function api(path, body) {
+  const r = await fetch("api/" + path + "?t=" + T, body === undefined ? {} : {
+    method: "POST", headers: { "X-Tether-Token": T, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+const post = p => api(p, {}).then(poll);
+
+function go(n) {
+  step = n;
+  document.querySelectorAll(".step").forEach(s => s.classList.toggle("hidden", +s.dataset.step !== n));
+  $("steps").innerHTML = [0,1,2,3].map(i => `<span class="${i <= n ? "on" : ""}"></span>`).join("");
+  $("steps").classList.toggle("hidden", n === 4);
+  if (n === 3 && !$("name").value) $("name").value = S.config.computer_name;
+  if (n === 4) { fillSettings(); loadUninstallPlan(); }
+}
+
+async function prepare() {
+  const which = document.querySelector("input[name=inst]:checked").value;
+  $("dlErr").classList.add("hidden");
+  S.config.install = which;
+  if (which === "existing" || S.bundled) return go(2);
+  $("pick").classList.add("hidden"); $("dl").classList.remove("hidden"); $("instBtn").disabled = true;
+  await api("install", {});
+}
+
+async function signIn(again) {
+  $("siErr").classList.add("hidden");
+  if (again) go(2);
+  await api("signin", {});
+}
+
+async function finish() {
+  const c = { ...S.config, setup_done: true, computer_name: $("name").value.trim(), start_at_login: $("auto").checked, paused: false };
+  try { await api("save", c); $("saveErr").classList.add("hidden"); go(4); }
+  catch (e) { $("saveErr").textContent = e.message; $("saveErr").classList.remove("hidden"); }
+}
+
+function fillSettings() {
+  $("name2").value = S.config.computer_name;
+  $("auto2").checked = S.autostart;
+  document.querySelectorAll("input[name=inst2]").forEach(r => r.checked = r.value === S.config.install);
+  $("privVer2").textContent = S.bundled ? "(" + S.bundled + ")" : "(downloads when you pick it and save)";
+  $("existVer2").textContent = S.existing ? "(" + S.existing + ")" : "";
+  $("existingChoice2").classList.toggle("hidden", !S.existing);
+  $("logPath").textContent = S.log;
+  $("updBtn").classList.toggle("hidden", !S.bundled);
+}
+async function saveSettings() {
+  const c = { ...S.config, computer_name: $("name2").value.trim(), start_at_login: $("auto2").checked,
+    install: document.querySelector("input[name=inst2]:checked")?.value || "bundled" };
+  if (c.install === "bundled" && !S.bundled) {
+    await update();
+    while (S.install.phase === "downloading" || !S.bundled) {
+      if (S.install.phase === "failed") return;
+      await new Promise(r => setTimeout(r, 1000)); await poll();
+    }
+  }
+  try { await api("save", c); $("saveErr2").classList.add("hidden"); }
+  catch (e) { $("saveErr2").textContent = e.message; $("saveErr2").classList.remove("hidden"); }
+}
+async function loadUninstallPlan() {
+  const p = await api("uninstall-plan");
+  const items = [];
+  if (p.Autostart) items.push("the “start when I log in” entry");
+  items.push("Letta Tether’s folder: settings, log, and the Letta it downloaded (if any) — <code>" + p.AppDir + "</code>");
+  if (navigator.platform.startsWith("Win")) items.push("the Letta Tether program");
+  $("unList").innerHTML = items.map(x => "<li>" + x + "</li>").join("");
+  $("keepList").innerHTML = p.Keeps.map(x => "<li>" + x + "</li>").join("");
+  $("unMac").textContent = navigator.platform.startsWith("Win") ? "" : "Afterwards, drag the Letta Tether app to the Trash.";
+}
+async function removeTether() {
+  if (!confirm("Remove Letta Tether? Your agents won't be able to use this computer until you set it up again.")) return;
+  $("unBtn").disabled = true; $("unBtn").textContent = "Removing…";
+  const r = await api("uninstall", {});
+  if (!r.ok) { $("unErr").textContent = "Some things couldn't be removed: " + r.error; $("unErr").classList.remove("hidden"); $("unBtn").disabled = false; $("unBtn").textContent = "Try again"; return; }
+  document.querySelectorAll(".card").forEach(c => c.classList.add("hidden"));
+  $("goneCard").classList.remove("hidden");
+  gone = true;
+}
+async function restart() { await api("stop", {}); await api("start", {}); poll(); }
+async function update() { $("dl2").classList.remove("hidden"); await api("install", {}); }
+
+function render() {
+  const ins = S.install;
+  // download progress (setup and settings)
+  const pct = ins.total ? Math.round(100 * ins.done / ins.total) : 0;
+  for (const [bar, txt] of [["dlBar", "dlText"], ["dlBar2", "dlText2"]]) {
+    $(bar).style.width = pct + "%";
+    $(txt).textContent = ins.phase === "downloading" ? `Downloading Letta ${ins.version || ""}… ${pct}%` : ins.phase === "done" ? "Letta " + (ins.version || "") + " is ready." : "";
+  }
+  if (ins.phase === "failed") { $("dlErr").textContent = "That didn't work: " + ins.error; $("dlErr").classList.remove("hidden"); $("pick").classList.remove("hidden"); $("dl").classList.add("hidden"); $("instBtn").disabled = false; }
+  if (step === 1 && ins.phase === "done" && S.bundled) go(2);
+  $("existingChoice").classList.toggle("hidden", !S.existing);
+  $("existingVer").textContent = S.existing ? "(version " + S.existing + ")" : "";
+  $("bundledVer").textContent = S.bundled ? "(already downloaded: " + S.bundled + ")" : "";
+  $("pickIntro").textContent = S.existing ? "Letta Tether found Letta already on this computer, so it'll use that." : "Letta isn't on this computer yet. Letta Tether can download it for you.";
+  document.querySelectorAll(".latestV").forEach(e => e.textContent = S.latest);
+  document.querySelectorAll(".bundledV").forEach(e => e.textContent = S.bundled || "");
+  $("existingOld").classList.toggle("hidden", !S.existing_old);
+  $("existingOld2").classList.toggle("hidden", !S.existing_old);
+  $("bundledNote").classList.toggle("hidden", !S.bundled_old);
+  if (!picked) { picked = true; const want = S.config.install || (S.existing ? "existing" : "bundled");
+    document.querySelectorAll("input[name=inst]").forEach(r => r.checked = r.value === want); }
+
+  // sign in
+  const si = S.signin;
+  $("siWait").classList.toggle("hidden", si.Phase !== "waiting");
+  $("siIdle").classList.toggle("hidden", si.Phase === "waiting" || si.Phase === "done" || si.Phase === "already");
+  $("siDone").classList.toggle("hidden", !(si.Phase === "done" || si.Phase === "already"));
+  if (si.Phase === "already") $("siDone").textContent = "✓ You're already signed in on this computer.";
+  $("siCode").textContent = si.Code || "…";
+  if (si.URL) $("siLink").href = si.URL;
+  $("siBtn").textContent = (si.Phase === "done" || si.Phase === "already") ? "Next" : si.Phase === "waiting" || si.Phase === "starting" ? "Waiting…" : "Sign in";
+  $("siBtn").disabled = si.Phase === "waiting" || si.Phase === "starting";
+  $("siBtn").onclick = (si.Phase === "done" || si.Phase === "already") ? () => go(3) : () => signIn();
+  $("siErr").classList.toggle("hidden", si.Phase !== "failed");
+  $("siErr").textContent = si.Error || "";
+
+  // status
+  const [word, help, color] = WORDS[S.state] || WORDS.stopped;
+  $("stText").textContent = word; $("stHelp").textContent = help; $("dot").style.background = color;
+  $("howto").classList.toggle("hidden", !(S.state === "connected" || S.state === "working"));
+  $("howName").textContent = S.config.computer_name;
+  $("stopBtn").classList.toggle("hidden", S.state === "stopped");
+  $("startBtn").classList.toggle("hidden", S.state !== "stopped" && S.state !== "error");
+  $("startBtn").textContent = S.state === "error" ? "Try again" : "Start";
+}
+
+async function poll() {
+  if (gone) return;
+  try { S = await api("status"); render(); } catch (e) {}
+}
+(async () => {
+  await poll();
+  const jump = +(location.hash.match(/^#step(\d)$/) || [])[1];
+  go(jump >= 0 && jump <= 4 && location.hash ? jump : S.config.setup_done ? 4 : 0);
+  if (location.hash === "#remove") { go(4); setTimeout(() => $("unBtn").scrollIntoView({behavior: "smooth", block: "center"}), 300); }
+  setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>

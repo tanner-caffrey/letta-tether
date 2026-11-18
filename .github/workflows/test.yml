@@ -1,0 +1,35 @@
+name: test
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: vet
+        run: go vet ./...
+      # Property tests run with a modest budget on every push; the race detector
+      # needs cgo, which Windows runners don't have by default.
+      - name: test (race)
+        if: runner.os != 'Windows'
+        run: go test -race ./... -rapid.checks=100
+      - name: test
+        if: runner.os == 'Windows'
+        run: go test ./... -rapid.checks=100
+      - name: build the app
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -ldflags "-H windowsgui -s -w" -o letta-tether.exe ./cmd/letta-tether
+          else
+            go build -o letta-tether ./cmd/letta-tether
+          fi

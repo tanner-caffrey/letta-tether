@@ -1,0 +1,79 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - { os: windows-latest, goos: windows, goarch: amd64 }
+          - { os: ubuntu-latest,  goos: linux,   goarch: amd64 }
+          - { os: ubuntu-latest,  goos: linux,   goarch: arm64 }
+          - { os: macos-latest,   goos: darwin,  goarch: universal }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: test
+        shell: bash
+        run: go test ./... -rapid.checks=100
+      - name: build
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          mkdir -p out
+          LDFLAGS="-s -w -X main.version=$VERSION"
+          case "${{ matrix.goos }}" in
+            windows)
+              go build -ldflags "$LDFLAGS -H windowsgui" -o out/letta-tether.exe ./cmd/letta-tether
+              ;;
+            linux)
+              CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} go build -ldflags "$LDFLAGS" -o out/letta-tether-linux-${{ matrix.goarch }} ./cmd/letta-tether
+              ( cd out && sha256sum letta-tether-linux-${{ matrix.goarch }} > letta-tether-linux-${{ matrix.goarch }}.sha256 )
+              ;;
+            darwin)
+              # the menu-bar library needs cgo, so build each CPU natively-ish and merge
+              CGO_ENABLED=1 GOARCH=arm64 go build -ldflags "$LDFLAGS" -o lt-arm64 ./cmd/letta-tether
+              CGO_ENABLED=1 GOARCH=amd64 go build -ldflags "$LDFLAGS" -o lt-amd64 ./cmd/letta-tether
+              APP="out/Letta Tether.app/Contents"
+              mkdir -p "$APP/MacOS" "$APP/Resources"
+              lipo -create -output "$APP/MacOS/letta-tether" lt-arm64 lt-amd64
+              sed "s/VERSION/${VERSION#v}/" packaging/mac/Info.plist > "$APP/Info.plist"
+              mkdir icon.iconset
+              for s in 16 32 128 256; do sips -z $s $s cmd/letta-tether/winres/icon.png --out icon.iconset/icon_${s}x${s}.png >/dev/null; done
+              iconutil -c icns icon.iconset -o "$APP/Resources/icon.icns"
+              codesign --force --deep --sign - "out/Letta Tether.app"   # ad-hoc: not trusted, but not "damaged" either
+              ( cd out && ditto -c -k --keepParent "Letta Tether.app" letta-tether-mac.zip && rm -rf "Letta Tether.app" )
+              ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          path: out/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist && sha256sum * > SHA256SUMS.txt && ls -la
+          PRE=""; case "${{ github.ref_name }}" in *-*) PRE="--prerelease" ;; esac
+          gh release create "${{ github.ref_name }}" * --repo "${{ github.repository }}" $PRE \
+            --title "Letta Tether ${{ github.ref_name }}" --notes-file ../RELEASE_NOTES.md
