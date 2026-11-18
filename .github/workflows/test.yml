@@ -3,6 +3,9 @@ on:
   push:
   pull_request:
 
+env:
+  RAPID_CHECKS: "100"  # property-test cases per test; rapid reads this (a -rapid.* flag breaks packages without rapid)
+
 jobs:
   test:
     strategy:
@@ -21,10 +24,10 @@ jobs:
       # needs cgo, which Windows runners don't have by default.
       - name: test (race)
         if: runner.os != 'Windows'
-        run: go test -race ./... -rapid.checks=100
+        run: go test -race ./...
       - name: test
         if: runner.os == 'Windows'
-        run: go test ./... -rapid.checks=100
+        run: go test ./...
       - name: build the app
         shell: bash
         run: |

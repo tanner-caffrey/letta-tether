@@ -6,6 +6,9 @@ on:
 permissions:
   contents: write
 
+env:
+  RAPID_CHECKS: "100"  # property-test cases per test; rapid reads this (a -rapid.* flag breaks packages without rapid)
+
 jobs:
   build:
     strategy:
@@ -23,7 +26,7 @@ jobs:
           go-version-file: go.mod
       - name: test
         shell: bash
-        run: go test ./... -rapid.checks=100
+        run: go test ./...
       - name: build
         shell: bash
         env:
