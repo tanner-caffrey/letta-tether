@@ -69,6 +69,7 @@ func TestPropSetEnabledTouchesOnlyThatSwitch(t *testing.T) {
 		}
 		body, _ := json.MarshalIndent(map[string]any{"accounts": accts, "topLevelThing": "keep me"}, "", "  ")
 		p := writeAccounts(t, dir, "telegram", string(body))
+		before, _ := os.Stat(p)
 		pick := rapid.IntRange(0, n-1).Draw(t, "pick")
 		on := rapid.Bool().Draw(t, "on")
 		if err := SetEnabled(dir, "telegram", accts[pick]["accountId"].(string), on); err != nil {
@@ -99,8 +100,10 @@ func TestPropSetEnabledTouchesOnlyThatSwitch(t *testing.T) {
 				t.Fatalf("account %d changed beyond its switch:\n got %v\nwant %v", i, g, want)
 			}
 		}
-		if info, _ := os.Stat(p); info.Mode().Perm() != 0o600 {
-			t.Fatalf("permissions changed to %v (tokens live in this file)", info.Mode().Perm())
+		// same permissions as before (tokens live in this file). On Unix that's the 0600 it
+		// was written with; Windows has no Unix permissions and reports both as 0666.
+		if info, _ := os.Stat(p); info.Mode().Perm() != before.Mode().Perm() {
+			t.Fatalf("permissions changed from %v to %v", before.Mode().Perm(), info.Mode().Perm())
 		}
 	})
 }
