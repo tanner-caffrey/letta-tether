@@ -132,6 +132,18 @@
     <div id="dl2" class="hidden"><div class="bar"><div id="dlBar2"></div></div><p class="dim" id="dlText2"></p></div>
   </section>
 
+  <section class="card step" data-step="4" id="tetherCard">
+    <h2>Letta Tether updates</h2>
+    <p>This is Letta Tether itself, the small app by your clock, not Letta. <span class="dim">You're on <b id="tvRunning"></b>.</span></p>
+    <p id="tvNew" class="hidden"><b>Version <span id="tvAvail"></span> is available.</b> <a id="tvNotes" target="_blank" rel="noopener">What's new</a></p>
+    <p id="tvNone" class="dim hidden">You have the newest version.</p>
+    <label class="choice"><input type="checkbox" id="autoUpd"> <b>Update Letta Tether automatically</b>
+      <small>Checks twice a day. Installs new versions on its own and restarts in a few seconds; your agents reconnect by themselves.</small></label>
+    <div id="tvBar" class="hidden"><div class="bar"><div id="tvBarFill"></div></div><p class="dim" id="tvText"></p></div>
+    <p id="tvErr" class="err hidden"></p>
+    <div class="row"><button onclick="tetherCheck()" id="tvCheck">Check now</button><span class="grow"></span><button class="primary hidden" id="tvBtn" onclick="tetherUpdate()">Update now</button></div>
+  </section>
+
   <section class="card step" data-step="4">
     <h2>Remove Letta Tether</h2>
     <p>This stops Letta on this computer and removes Letta Tether:</p>
@@ -142,6 +154,10 @@
     <p id="unErr" class="err hidden"></p>
     <div class="row"><span class="grow"></span><button id="unBtn" onclick="removeTether()">Remove Letta Tether…</button></div>
   </section>
+  <section class="card hidden" id="updatedCard">
+    <h2>Letta Tether updated</h2>
+    <p>The new version opened its own page in a new tab. You can close this one.</p>
+  </section>
   <section class="card hidden" id="goneCard">
     <h2>Letta Tether is removed</h2>
     <p>You can close this page. Your agents are still in your Letta account, and will use this computer again if you reinstall.</p>
@@ -150,7 +166,7 @@
 <script>
 const T = new URLSearchParams(location.search).get("t");
 const $ = id => document.getElementById(id);
-let S = null, step = 0, picked = false, gone = false;
+let S = null, step = 0, picked = false, gone = false, restarting = false;
 const WORDS = {
   connected: ["Connected", "Your agent can use this computer.", "var(--go)"],
   working: ["Working", "Your agent is doing something on this computer right now.", "var(--work)"],
@@ -198,6 +214,48 @@ async function finish() {
   catch (e) { $("saveErr").textContent = e.message; $("saveErr").classList.remove("hidden"); }
 }
 
+function renderTether() {
+  const t = S.tether;
+  $("tetherCard").classList.toggle("hidden", !t);
+  if (!t) return;
+  $("tvRunning").textContent = t.running;
+  $("autoUpd").checked = S.config.auto_update !== false;
+  const busy = t.phase === "downloading" || t.phase === "restarting";
+  $("tvNew").classList.toggle("hidden", !t.available);
+  $("tvAvail").textContent = t.available;
+  $("tvNotes").href = t.url || "#";
+  $("tvNone").classList.toggle("hidden", !!t.available || !t.checked || t.checked.startsWith("0001") || busy);
+  $("tvBtn").classList.toggle("hidden", !t.available || busy);
+  $("tvCheck").disabled = busy || t.phase === "checking";
+  $("tvBar").classList.toggle("hidden", !busy);
+  if (t.phase === "downloading") {
+    const pct = t.total > 0 ? Math.round(t.done * 100 / t.total) : 0;
+    $("tvBarFill").style.width = pct + "%";
+    $("tvText").textContent = "Downloading " + (t.available || "the update") + "… " + (t.total > 0 ? pct + "%" : "");
+  }
+  if (t.phase === "restarting") {
+    $("tvBarFill").style.width = "100%";
+    $("tvText").textContent = "Restarting into the new version. This page will reconnect in a few seconds.";
+    restarting = true;
+  }
+  $("tvErr").classList.toggle("hidden", t.phase !== "failed");
+  $("tvErr").textContent = t.phase === "failed" ? "The update didn't install: " + t.error + " Your current version is still running." : "";
+}
+async function tetherCheck() {
+  $("tvCheck").disabled = true;
+  try { S.tether = await api("tether-check"); renderTether(); } catch (e) {}
+  $("tvCheck").disabled = false;
+}
+async function tetherUpdate() {
+  $("tvBtn").classList.add("hidden");
+  await api("tether-update", {});
+  poll();
+}
+$("autoUpd").addEventListener("change", async () => {
+  const c = { ...S.config, auto_update: $("autoUpd").checked };
+  try { await api("save", c); } catch (e) {}
+});
+
 function fillSettings() {
   $("name2").value = S.config.computer_name;
   $("auto2").checked = S.autostart;
@@ -244,6 +302,7 @@ async function restart() { await api("stop", {}); await api("start", {}); poll()
 async function update() { $("dl2").classList.remove("hidden"); await api("install", {}); }
 
 function render() {
+  renderTether();
   const ins = S.install;
   // download progress (setup and settings)
   const pct = ins.total ? Math.round(100 * ins.done / ins.total) : 0;
@@ -291,7 +350,15 @@ function render() {
 
 async function poll() {
   if (gone) return;
-  try { S = await api("status"); render(); } catch (e) {}
+  try { S = await api("status"); render(); }
+  catch (e) {
+    if (restarting) {
+      // the old version has gone; the new one opens its own page (new private link)
+      document.querySelectorAll(".card").forEach(c => c.classList.add("hidden"));
+      $("updatedCard").classList.remove("hidden");
+      gone = true;
+    }
+  }
 }
 (async () => {
   await poll();

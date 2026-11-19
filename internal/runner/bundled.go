@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +13,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/tanner-caffrey/letta-tether/internal/ziputil"
 )
 
 // The bundled copy is Letta's own official build with Node bundled in, published on PyPI
@@ -172,69 +173,12 @@ func download(ctx context.Context, rel Release, path string, progress func(done,
 	return nil
 }
 
-// safeEntryName accepts only plain relative paths written with forward slashes, like
-// every real Letta build uses: no backslashes, drive letters, leading slash, or "." / ".."
-// parts, and no empty parts except a trailing slash on a folder.
-func safeEntryName(name string) bool {
-	if name == "" || strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") {
-		return false
-	}
-	parts := strings.Split(strings.TrimSuffix(name, "/"), "/")
-	for _, p := range parts {
-		if p == "" || p == "." || p == ".." {
-			return false
-		}
-	}
-	return true
-}
+// safeEntryName and unzip are kept as names here for the tests; the work is in ziputil.
+var safeEntryName = ziputil.SafeName
 
 func unzip(src, dest string) error {
-	zr, err := zip.OpenReader(src)
-	if err != nil {
-		return err
-	}
-	defer zr.Close()
-	root, _ := filepath.Abs(dest)
-	for _, f := range zr.File {
-		if !safeEntryName(f.Name) {
-			return fmt.Errorf("unsafe path in archive: %q", f.Name)
-		}
-		target := filepath.Join(root, filepath.FromSlash(f.Name))
-		if !strings.HasPrefix(target, root+string(os.PathSeparator)) {
-			return fmt.Errorf("unsafe path in archive: %q", f.Name)
-		}
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		mode := f.Mode().Perm()
-		// Wheels don't always keep the executable bit; the bundled node must have it.
-		if strings.Contains(f.Name, "/_payload/bin/") || strings.HasSuffix(f.Name, ".node") {
-			mode |= 0o755
-		}
-		if mode == 0 {
-			mode = 0o644
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
-		if err != nil {
-			rc.Close()
-			return err
-		}
-		_, err = io.Copy(out, rc)
-		rc.Close()
-		out.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return ziputil.Unzip(src, dest, func(name string) bool {
+		// the bundled node must be executable, and so must native modules
+		return strings.Contains(name, "/_payload/bin/") || strings.HasSuffix(name, ".node")
+	})
 }

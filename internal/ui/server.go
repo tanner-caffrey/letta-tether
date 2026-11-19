@@ -20,6 +20,7 @@ import (
 	"github.com/tanner-caffrey/letta-tether/internal/config"
 	"github.com/tanner-caffrey/letta-tether/internal/runner"
 	"github.com/tanner-caffrey/letta-tether/internal/uninstall"
+	"github.com/tanner-caffrey/letta-tether/internal/update"
 )
 
 //go:embed page.html
@@ -40,6 +41,8 @@ type App struct {
 	// Restart applies new settings: pick the install, rename, start.
 	Apply func(config.Config) error
 	Quit  func()
+	// Updates is Letta Tether's own updater (nil in tests and dev builds).
+	Updates *update.Manager
 
 	mu      sync.Mutex
 	cfg     config.Config
@@ -96,6 +99,27 @@ func (a *App) Start(c config.Config) (string, error) {
 		a.SetConfig(c)
 		a.Runner.Start()
 		ok(w)
+	}))
+	mux.HandleFunc("/api/tether-check", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		if a.Updates == nil {
+			http.Error(w, "updates aren't available in this build", http.StatusNotFound)
+			return
+		}
+		a.Updates.Check(r.Context())
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(a.Updates.Status())
+	}))
+	mux.HandleFunc("/api/tether-update", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "POST only", http.StatusMethodNotAllowed)
+			return
+		}
+		if a.Updates == nil {
+			http.Error(w, "updates aren't available in this build", http.StatusNotFound)
+			return
+		}
+		go a.Updates.ApplyFromPage(context.Background()) // the page follows along through status
+		w.Write([]byte(`{"ok":true}`))
 	}))
 	mux.HandleFunc("/api/uninstall-plan", a.guard(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -188,6 +212,9 @@ func (a *App) status(w http.ResponseWriter, r *http.Request) {
 		"bundled_old":  a.bundled != nil && runner.Older(a.bundled.Version, a.latest),
 	}
 	a.mu.Unlock()
+	if a.Updates != nil {
+		out["tether"] = a.Updates.Status()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
 }

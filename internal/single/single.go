@@ -27,6 +27,19 @@ func (l *Lock) Release() {
 	os.Remove(l.path)
 }
 
+// AcquireWait is Acquire, but keeps trying for up to d. Used right after an update,
+// when the old version is still on its way out.
+func AcquireWait(path string, d time.Duration) (*Lock, error) {
+	deadline := time.Now().Add(d)
+	for {
+		l, err := Acquire(path)
+		if err != ErrRunning || time.Now().After(deadline) {
+			return l, err
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 // Acquire takes an exclusive lock on path, or returns ErrRunning.
 func Acquire(path string) (*Lock, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)

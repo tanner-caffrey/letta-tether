@@ -37,6 +37,10 @@ jobs:
           LDFLAGS="-s -w -X main.version=$VERSION"
           case "${{ matrix.goos }}" in
             windows)
+              # icon + version info, with this release's version number
+              go install github.com/tc-hib/go-winres@v0.3.3
+              ( cd cmd/letta-tether && go-winres make --in winres/winres.json --arch amd64 \
+                  --product-version "${VERSION#v}.0" --file-version "${VERSION#v}.0" )
               go build -ldflags "$LDFLAGS -H windowsgui" -o out/letta-tether.exe ./cmd/letta-tether
               ;;
             linux)

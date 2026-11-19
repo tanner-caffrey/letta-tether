@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
 
 	"fyne.io/systray"
 
@@ -22,7 +23,10 @@ import (
 	"github.com/tanner-caffrey/letta-tether/internal/runner"
 	"github.com/tanner-caffrey/letta-tether/internal/single"
 	"github.com/tanner-caffrey/letta-tether/internal/ui"
+	"github.com/tanner-caffrey/letta-tether/internal/update"
 )
+
+var updates = &update.Manager{}
 
 var (
 	cfg config.Config
@@ -33,15 +37,34 @@ var (
 
 var errNoLetta = errors.New("Letta isn't set up yet. Open Settings to finish setup.")
 
+var lock *single.Lock
+
 func main() {
 	background := len(os.Args) > 1 && os.Args[1] == "--background"
+	// --updated: we were just started by the previous version, right after an update.
+	updated := len(os.Args) > 1 && (os.Args[1] == "--updated" || os.Args[1] == "--updated-open")
+	if updated {
+		background = os.Args[1] == "--updated" // --updated-open: they were on the page, open it again
+	}
 	_ = os.MkdirAll(runner.AppDir(), 0o755)
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "--headless", "--download", "--version", "--help", "-h":
+		case "--headless", "--updated-headless", "--download", "--version", "--help", "-h":
+			if os.Args[1] == "--version" {
+				// answer without touching the lock: the updater runs this on a new
+				// version while the old one is still running
+				fmt.Println("letta-tether", version)
+				os.Exit(0)
+			}
 			// command-line modes: still only one copy at a time
-			lock, err := single.Acquire(filepath.Join(runner.AppDir(), "running.lock"))
+			var err error
+			if os.Args[1] == "--updated-headless" {
+				lock, err = single.AcquireWait(filepath.Join(runner.AppDir(), "running.lock"), 20*time.Second)
+				os.Args[1] = "--headless"
+			} else {
+				lock, err = single.Acquire(filepath.Join(runner.AppDir(), "running.lock"))
+			}
 			if os.Args[1] == "--headless" && errors.Is(err, single.ErrRunning) {
 				fmt.Fprintln(os.Stderr, "letta-tether: already running on this computer")
 				os.Exit(1)
@@ -54,7 +77,13 @@ func main() {
 	}
 
 	// Only one Letta Tether at a time. A second launch just asks the first to open its page.
-	lock, err := single.Acquire(filepath.Join(runner.AppDir(), "running.lock"))
+	// After an update, wait a little for the old version to finish exiting.
+	var err error
+	if updated {
+		lock, err = single.AcquireWait(filepath.Join(runner.AppDir(), "running.lock"), 20*time.Second)
+	} else {
+		lock, err = single.Acquire(filepath.Join(runner.AppDir(), "running.lock"))
+	}
 	if errors.Is(err, single.ErrRunning) {
 		if !background {
 			single.Poke(runner.AppDir())
@@ -64,6 +93,7 @@ func main() {
 	if err == nil {
 		defer lock.Release()
 	}
+	update.CleanupAfterUpdate() // remove the previous version's backup, if any
 
 	cfg = config.Load()
 	systray.Run(func() { onReady(background) }, onExit)
@@ -85,6 +115,8 @@ func onReady(background bool) {
 	mOpen := systray.AddMenuItem("Settings…", "Open the Letta Tether page")
 	mLog := systray.AddMenuItem("Open log", "What Letta has been saying")
 	mRemove := systray.AddMenuItem("Remove Letta Tether…", "Uninstall: opens a page that shows exactly what gets removed")
+	mUpdate := systray.AddMenuItem("", "Install the new version of Letta Tether")
+	mUpdate.Hide()
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Quit", "Stop and close Letta Tether")
 
@@ -114,6 +146,26 @@ func onReady(background bool) {
 
 	app.Apply = apply
 	app.Quit = systray.Quit
+	app.Updates = updates
+
+	updates.Version = version
+	updates.Auto = func() bool { return app.Config().AutoUpdateOn() }
+	updates.Restart = restartIntoNewVersion
+	updates.OnChange = func(st update.Status) {
+		switch {
+		case st.Phase == "downloading":
+			mUpdate.SetTitle("Updating Letta Tether…")
+			mUpdate.Disable()
+			mUpdate.Show()
+		case st.Available != "":
+			mUpdate.SetTitle("Update to " + st.Available)
+			mUpdate.Enable()
+			mUpdate.Show()
+		default:
+			mUpdate.Hide()
+		}
+	}
+	go updates.Run(context.Background())
 	url, err := app.Start(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "settings page:", err)
@@ -153,6 +205,8 @@ func onReady(background bool) {
 				go run.Stop()
 			case <-mOpen.ClickedCh:
 				openBrowser(app.URL())
+			case <-mUpdate.ClickedCh:
+				go updates.Apply(context.Background())
 			case <-mRemove.ClickedCh:
 				openBrowser(app.URL() + "#remove")
 			case <-mLog.ClickedCh:
@@ -206,6 +260,38 @@ func apply(c config.Config) error {
 	if !c.Paused {
 		run.Start()
 	}
+	return nil
+}
+
+// restartIntoNewVersion stops Letta, lets go of the one-copy lock, starts the new
+// version (which waits for the lock), and quits. The new version picks up the same
+// settings, so it reconnects under the same name without asking anything.
+func restartIntoNewVersion(reopen bool) error {
+	t, err := update.CurrentTarget()
+	if err != nil {
+		return err
+	}
+	run.Stop()
+	lock.Release()
+	flag := "--updated"
+	if reopen {
+		flag = "--updated-open"
+	}
+	if runtime.GOOS == "darwin" {
+		// relaunch the app bundle, so macOS treats it as the app (menu bar icon and all)
+		err = update.Relaunch("open", "-n", t.Replace, "--args", flag)
+	} else {
+		err = update.Relaunch(t.Program, flag)
+	}
+	if err != nil {
+		// couldn't launch the new one: keep running the old one rather than vanish
+		lock, _ = single.Acquire(filepath.Join(runner.AppDir(), "running.lock"))
+		if pick(app.Config()) == nil && !app.Config().Paused {
+			run.Start()
+		}
+		return fmt.Errorf("couldn't start the new version: %w", err)
+	}
+	systray.Quit()
 	return nil
 }
 

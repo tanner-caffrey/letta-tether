@@ -19,7 +19,13 @@ type Config struct {
 	StartAtLogin bool   `json:"start_at_login"`
 	// Paused: the person pressed Stop. Stay stopped across restarts until they press Start.
 	Paused bool `json:"paused"`
+	// AutoUpdate: install new Letta Tether versions by itself. A pointer so "never set"
+	// (older settings files) can mean on, while an explicit false stays off.
+	AutoUpdate *bool `json:"auto_update,omitempty"`
 }
+
+// AutoUpdateOn says whether automatic updates are on (default: on).
+func (c Config) AutoUpdateOn() bool { return c.AutoUpdate == nil || *c.AutoUpdate }
 
 func path() string { return filepath.Join(runner.AppDir(), "config.json") }
 

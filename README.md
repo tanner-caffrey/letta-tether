@@ -49,6 +49,16 @@ curl -fsSL https://raw.githubusercontent.com/tanner-caffrey/letta-tether/main/in
 
 You can switch between them in settings.
 
+## Updates
+
+Letta Tether updates itself: it checks GitHub twice a day, and when there's a new version it downloads it, checks it, and restarts into it within a few seconds. Your agents reconnect by themselves. You can turn this off in Settings ("Update Letta Tether automatically"); then the tray menu and the settings page offer **Update to vX** when there's one.
+
+Each update is checked against the release's published checksums and run once before it replaces the current version. The previous version is kept until the new one has started. Only full releases from this repository are installed, never test builds.
+
+(Version 0.1.0 had no updater, so if you have it, download the newest version once by hand.)
+
+This is separate from Letta itself: see "Which Letta does it run?" above.
+
 ## Removing it
 
 Click the icon → **Remove Letta Tether…**. The page lists exactly what it removes:
@@ -68,7 +78,7 @@ For anyone (or any agent) reviewing it:
 - It won't start a second copy of itself, and it picks its own computer name (`<computer> (tether)`) so it doesn't collide with a `letta server` you run by hand. Letta itself also refuses to run two listeners with the same name.
 - The setup/settings page is served only on `127.0.0.1`, on a random port, behind a random token in the link, so other programs and websites can't use it.
 - Files: Letta Tether keeps its settings, log, and (optionally) downloaded Letta in `%AppData%\letta-tether` (Windows), `~/Library/Application Support/letta-tether` (Mac), or `~/.config/letta-tether` (Linux). Start at login is one registry value under `HKCU\...\Run` (visible in Task Manager → Startup), a LaunchAgent (Mac), or an XDG autostart entry / systemd user service (Linux).
-- Network: Letta itself talks to Letta. Letta Tether additionally asks npm for the newest Letta version, and PyPI when downloading Letta. Nothing else.
+- Network: Letta itself talks to Letta. Letta Tether additionally asks npm for the newest Letta version, PyPI when downloading Letta, and GitHub (this repository's releases) for its own updates. Nothing else.
 
 ## Command line
 
@@ -77,6 +87,7 @@ letta-tether                 tray icon + setup page
 letta-tether --headless      no tray: keep Letta running, print status
     --name "my server"       computer name
     --use existing|bundled   which Letta to run
+    --no-auto-update         don't update Letta Tether by itself
 letta-tether --download      fetch Letta's official all-in-one build
 letta-tether --version
 ```

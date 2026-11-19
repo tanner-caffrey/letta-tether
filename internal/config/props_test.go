@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"unicode/utf8"
 
@@ -54,10 +55,18 @@ func TestPropConfigRoundTripAndDamage(t *testing.T) {
 			StartAtLogin: rapid.Bool().Draw(t, "auto"),
 			Paused:       rapid.Bool().Draw(t, "paused"),
 		}
+		switch rapid.IntRange(0, 2).Draw(t, "auto") {
+		case 1:
+			on := true
+			c.AutoUpdate = &on
+		case 2:
+			off := false
+			c.AutoUpdate = &off
+		}
 		if err := c.saveTo(dir); err != nil {
 			t.Fatal(err)
 		}
-		if got := loadFrom(dir, func() bool { return false }); got != c {
+		if got := loadFrom(dir, func() bool { return false }); !reflect.DeepEqual(got, c) || got.AutoUpdateOn() != c.AutoUpdateOn() {
 			t.Fatalf("round trip: saved %+v, loaded %+v", c, got)
 		}
 		// now damage it: truncate, garbage, wrong types
@@ -78,4 +87,17 @@ func TestPropConfigRoundTripAndDamage(t *testing.T) {
 			t.Fatalf("damaged file %q gave install %q", damaged, got.Install)
 		}
 	})
+}
+
+// Settings files from before auto-update existed mean "on"; an explicit off stays off.
+func TestAutoUpdateDefaultsOnAndOffSticks(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"setup_done":true,"install":"existing","computer_name":"x"}`), 0o644)
+	if !loadFrom(dir, func() bool { return false }).AutoUpdateOn() {
+		t.Fatal("old settings file should mean auto-update on")
+	}
+	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"computer_name":"x","install":"existing","auto_update":false}`), 0o644)
+	if loadFrom(dir, func() bool { return false }).AutoUpdateOn() {
+		t.Fatal("explicit off was turned back on")
+	}
 }
