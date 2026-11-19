@@ -3,7 +3,9 @@ package runner
 import (
 	"archive/zip"
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -188,6 +190,26 @@ func TestChannelsSwitch(t *testing.T) {
 		}
 		if starts != 1 {
 			t.Fatalf("OnStart called %d times", starts)
+		}
+	}
+}
+
+// Run returns everything a command printed, however much: agent lists run to megabytes.
+// Uses real Node on purpose: Node's process.exit() drops whatever hasn't drained into a
+// pipe yet (only a pipe; a file gets everything). Letta does exactly that, and a Go fake
+// doesn't reproduce it.
+func TestRunReturnsAllOutput(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("needs node")
+	}
+	script := filepath.Join(t.TempDir(), "big.js")
+	os.WriteFile(script, []byte(`process.stdout.write("x".repeat(Number(process.argv[2]))); process.exit(0);`), 0o644)
+	in := Install{Kind: "test", Node: node, Script: script}
+	for _, n := range []int{0, 65535, 65536, 65537, 2_000_000} {
+		out, err := in.Run(context.Background(), fmt.Sprint(n))
+		if err != nil || len(out) != n {
+			t.Fatalf("printed %d bytes, Run returned %d (err %v)", n, len(out), err)
 		}
 	}
 }

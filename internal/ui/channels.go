@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -164,4 +165,69 @@ func (a *App) agentsList(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.SliceStable(kept, func(i, j int) bool { return strings.ToLower(kept[i].Name) < strings.ToLower(kept[j].Name) })
 	writeJSON(w, map[string]any{"ok": true, "agents": kept})
+}
+
+func (a *App) setupStarter() (channels.Starter, error) {
+	if a.setupStart != nil {
+		return a.setupStart, nil
+	}
+	in := a.Channels
+	if in.Node == "" {
+		return nil, errNotSetUp
+	}
+	return func(ctx context.Context, channel string) *exec.Cmd {
+		return in.Command(ctx, "channels", "configure", channel)
+	}, nil
+}
+
+// channelSetup relays Letta's own channel setup. GET: what it says now. POST with
+// action start / answer / cancel.
+func (a *App) channelSetup(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		writeJSON(w, map[string]any{"ok": true, "setup": a.setup.State()})
+		return
+	}
+	var req struct {
+		Action  string `json:"action"`
+		Channel string `json:"channel"`
+		Answer  string `json:"answer"`
+	}
+	if err := readBody(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	var err error
+	switch req.Action {
+	case "start":
+		var start channels.Starter
+		if start, err = a.setupStarter(); err == nil {
+			err = a.setup.BeginPrepared(a.prepareChannel, start, req.Channel)
+		}
+	case "answer":
+		err = a.setup.Answer(req.Answer)
+	case "cancel":
+		a.setup.Cancel()
+	default:
+		err = uiError("unknown action")
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "setup": a.setup.State()})
+}
+
+// prepareChannel installs a channel's extra pieces (if it needs them and doesn't have them
+// yet) with no input attached, before Letta's questions start. See channels.Preparer.
+func (a *App) prepareChannel(ctx context.Context, channel string) error {
+	list, err := channels.List(ctx, a.lettaCmd())
+	if err != nil {
+		return err
+	}
+	for _, c := range list {
+		if c.ID == channel && c.RuntimeInstalled {
+			return nil
+		}
+	}
+	return channels.Install(ctx, a.lettaCmd(), channel)
 }

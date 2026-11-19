@@ -53,8 +53,8 @@ You can switch between them in settings.
 
 Letta can let people talk to your agent from Telegram, Discord, Slack, WhatsApp or Signal. Letta Tether can keep those running on this computer, alongside everything else.
 
-1. Set the channel up once with Letta's own setup, in a terminal: `letta channels configure telegram` (or discord, slack, whatsapp, signal). It asks for things like a bot token.
-2. In Letta Tether's settings, turn on **Run messaging channels on this computer**. Each channel you've set up gets its own switch, and shows whether it's running or has a problem.
+1. In Letta Tether's settings, under **Messaging channels**, press **Set up** and pick the channel. Letta's own setup asks its questions right there on the page (a bot token, who's allowed to message). Each channel is set up once.
+2. Turn on **Run messaging channels on this computer**. Each channel you've set up gets its own switch, and shows whether it's running or has a problem.
 3. When someone new messages your bot, they get a pairing code back. Paste it under that channel, pick which agent answers, and press **Connect**.
 
 Channels you already set up with Letta on this computer show up by themselves. If you were running them some other way (`letta server --channels ...` in a terminal or a service), stop that first, or two copies will fight over the same bot.

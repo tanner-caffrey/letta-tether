@@ -1,6 +1,10 @@
-**New: messaging channels.** Letta Tether can now keep your Letta channels (Telegram, Discord, Slack, WhatsApp, Signal) running on this computer, alongside everything else. Turn on **Run messaging channels on this computer** in Settings. Each channel you've set up with Letta gets a switch and shows whether it's running; paste a pairing code to connect a new chat to an agent. If one channel has a problem, only that channel stops. Off by default: nothing changes until you turn it on. See "Messaging channels" in the README.
+**New: set up channels right in Settings.** Under **Messaging channels**, press **Set up** and pick Telegram, Discord, Slack, WhatsApp or Signal. Letta's own setup asks its questions on the page, one at a time: tokens go in a password box and are never shown again, questions with a default have a **Use default** button, and when it asks which agent to use you pick from your agents by name. No terminal, and it works with the Letta that Letta Tether downloads for you.
 
-Already on 0.1.1? This installs itself within a day (or press **Update now** in Settings).
+**Fixed:** the "which agent answers?" list could be empty if you have a lot of agents.
+
+Not there yet: WhatsApp sets up, but its QR code (to link your phone) doesn't show in Settings yet. Signal is untested.
+
+Already on 0.1.1 or 0.1.2? This installs itself within a day (or press **Update now** in Settings).
 
 **Windows:** download `letta-tether.exe` and run it. Windows will warn that it's from an unknown publisher (it isn't code-signed): **More info → Run anyway**.
 

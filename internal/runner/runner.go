@@ -47,12 +47,32 @@ func (i Install) String() string {
 	return fmt.Sprintf("%s Letta %s", i.Kind, i.Version)
 }
 
+// Command is `letta <args...>` with this install, hidden (no window), for things that
+// need to be talked to, like a channel's setup questions.
+func (i Install) Command(ctx context.Context, args ...string) *exec.Cmd {
+	return i.command(ctx, args...)
+}
+
 // Run runs a short letta command (like `channels status`) and returns what it printed.
+//
+// Output goes through a temp file, not a pipe: Letta exits after the first 64 KB when
+// its output is a pipe (found with `agents list`, ~1.7 MB, silently cut to 65536 bytes).
 func (i Install) Run(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := i.command(ctx, args...)
 	var errb strings.Builder
 	cmd.Stderr = &errb
-	out, err := cmd.Output()
+	f, ferr := os.CreateTemp("", "letta-tether-out-*")
+	if ferr != nil {
+		return nil, ferr
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	cmd.Stdout = f
+	err := cmd.Run()
+	out, rerr := os.ReadFile(f.Name())
+	if err == nil {
+		err = rerr
+	}
 	if err != nil {
 		msg := strings.TrimSpace(errb.String())
 		if j := strings.LastIndexByte(msg, '\n'); j >= 0 {

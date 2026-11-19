@@ -50,6 +50,9 @@ type App struct {
 	ChannelWatch func() channels.Result
 	// letta runs a letta subcommand; tests replace it.
 	letta channels.Letter
+	// setup is the one channel setup that can run at a time; setupStart builds its command.
+	setup      channels.Setup
+	setupStart channels.Starter
 
 	mu      sync.Mutex
 	cfg     config.Config
@@ -133,6 +136,7 @@ func (a *App) Start(c config.Config) (string, error) {
 	mux.HandleFunc("/api/channel-pair", a.guard(a.channelPair))
 	mux.HandleFunc("/api/channel-install", a.guard(a.channelInstall))
 	mux.HandleFunc("/api/agents", a.guard(a.agentsList))
+	mux.HandleFunc("/api/channel-setup", a.guard(a.channelSetup))
 	mux.HandleFunc("/api/uninstall-plan", a.guard(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(uninstall.MakePlan(runner.AppDir()))

@@ -139,12 +139,20 @@
       <small>Runs the channels you've switched on below. If one has a problem (an expired bot token, say), only that channel stops: your agent can still use this computer.</small></label>
     <div id="chanList" class="dim">Loading…</div>
     <p id="chanErr" class="err hidden"></p>
-    <details style="margin-top:10px"><summary>Setting up a new channel</summary>
-      <p>Each one is set up once, with Letta's own setup in a terminal (it asks for things like a bot token):</p>
-      <p><code>letta channels configure telegram</code> <span class="dim">(or discord, slack, whatsapp, signal)</span></p>
-      <p class="dim">Then come back here and press Refresh. Messages from someone new get a pairing code back; paste it under that channel to connect them to an agent.</p>
-      <button onclick="loadChannels()">Refresh</button>
-    </details>
+    <div id="setupBox" class="hidden" style="margin-top:12px">
+      <h3 id="setupTitle" style="margin:0 0 6px">Setting up</h3>
+      <pre id="setupLog" style="white-space:pre-wrap;max-height:260px;overflow:auto;background:#f6f6f4;border-radius:8px;padding:10px;font-size:13px;margin:0"></pre>
+      <div id="setupAsk" class="hidden" style="margin-top:8px">
+        <p id="setupQ" style="margin:0 0 6px"><b></b></p>
+        <div class="row"><select id="setupAgent" class="hidden" style="flex:1"><option value="">Pick the agent…</option></select>
+          <input id="setupIn" type="text" autocomplete="off" style="flex:1">
+          <button id="setupDef" class="hidden" onclick="setupSend(true)">Use default</button>
+          <button class="primary" onclick="setupSend(false)">Next</button></div>
+      </div>
+      <p id="setupEnd" class="hidden"></p>
+      <div class="row" style="margin-top:8px"><span class="grow"></span><button id="setupCancel" onclick="setupAct('cancel')">Cancel setup</button><button id="setupClose" class="hidden" onclick="setupClose()">Close</button></div>
+    </div>
+    <p class="dim" style="margin-top:10px">Messages from someone new get a pairing code back; paste it under that channel to connect them to an agent.</p>
   </section>
 
   <section class="card step" data-step="4" id="tetherCard">
@@ -238,7 +246,6 @@ async function loadChannels() {
     if (!r.ok) { $("chanList").textContent = r.error; return; }
     $("chanAll").checked = r.on;
     const set = r.channels.filter(c => c.configured && c.accounts && c.accounts.length);
-    const notSet = r.channels.filter(c => !c.configured && chanNames[c.id]).map(c => chanNames[c.id]);
     let h = "";
     for (const c of set) {
       for (const a of c.accounts) {
@@ -259,7 +266,9 @@ async function loadChannels() {
       }
     }
     if (!set.length) h += `<p class="dim">No channels set up yet.</p>`;
-    if (notSet.length) h += `<p class="dim">Not set up: ${esc(notSet.join(", "))}.</p>`;
+    const avail = r.channels.filter(c => !c.configured && chanNames[c.id]);
+    if (avail.length) h += `<div class="row" style="margin-top:8px"><span class="dim">Set up:</span> ` +
+      avail.map(c => `<button onclick="setupStart('${esc(c.id)}')">${esc(chanNames[c.id])}</button>`).join(" ") + `</div>`;
     $("chanList").innerHTML = h;
     fillAgents();
   } catch (e) { $("chanList").textContent = "Couldn't ask Letta about channels."; }
@@ -293,6 +302,73 @@ async function chanInstall(channel) {
   const r = await api("channel-install", { channel });
   chanShowErr(r.ok ? "" : r.error); loadChannels();
 }
+
+let setupTimer = null;
+async function setupStart(ch) {
+  const r = await api("channel-setup", { action: "start", channel: ch });
+  if (!r.ok) { chanShowErr(r.error); return; }
+  chanShowErr("");
+  $("setupTitle").textContent = "Setting up " + (chanNames[ch] || ch);
+  $("setupBox").classList.remove("hidden");
+  setupShow(r.setup); setupPoll();
+}
+function setupPoll() {
+  clearTimeout(setupTimer);
+  setupTimer = setTimeout(async () => {
+    let done = false;
+    try { const r = await api("channel-setup"); done = r.setup.done; setupShow(r.setup); } catch (e) {}
+    if (!done) setupPoll();   // keep following even if one update went wrong
+  }, 700);
+}
+let lastQ = "";
+function setupShow(st) {
+  const log = $("setupLog");
+  log.textContent = (st.lines || []).join("\n");   // Letta's words, shown as text, never as HTML
+  log.scrollTop = log.scrollHeight;
+  const ask = st.waiting && !st.done;
+  $("setupAsk").classList.toggle("hidden", !ask);
+  if (ask && st.question !== lastQ) {
+    lastQ = st.question;
+    $("setupQ").querySelector("b").textContent = st.question;
+    const inp = $("setupIn");
+    inp.type = st.secret ? "password" : "text"; inp.value = ""; inp.focus();
+    $("setupDef").classList.toggle("hidden", !st.default);
+    // Letta asks for an agent ID: offer the agents by name instead
+    $("setupAgent").classList.toggle("hidden", !st.ask_agent);
+    inp.classList.toggle("hidden", !!st.ask_agent);
+    if (st.ask_agent) fillSetupAgents();
+    $("setupDef").textContent = st.default ? "Use default (" + st.default + ")" : "Use default";
+  }
+  if (!ask) lastQ = "";
+  $("setupCancel").classList.toggle("hidden", st.done);
+  $("setupClose").classList.toggle("hidden", !st.done);
+  const end = $("setupEnd");
+  end.classList.toggle("hidden", !st.done);
+  if (st.done) {
+    end.className = st.ok ? "" : "err";
+    end.textContent = st.ok ? "Done. It's in the list above now: switch it on, and Letta Tether restarts Letta to run it."
+      : (st.error || "Letta's setup didn't finish.") + " You can close this and try again.";
+    if (st.ok) loadChannels();
+  }
+}
+async function fillSetupAgents() {
+  if (!agents) { try { const r = await api("agents"); agents = r.ok ? r.agents : []; } catch (e) { agents = []; } }
+  const sel = $("setupAgent");
+  if (sel.options.length > 1) return;
+  for (const g of agents) { const o = document.createElement("option"); o.value = g.id; o.textContent = g.name; sel.appendChild(o); }
+}
+async function setupSend(useDefault) {
+  const picking = !$("setupAgent").classList.contains("hidden");
+  const answer = useDefault ? "" : picking ? $("setupAgent").value : $("setupIn").value;
+  if (picking && !answer && !useDefault) { chanShowErr("Pick which agent this channel talks to."); return; }
+  chanShowErr("");
+  const r = await api("channel-setup", { action: "answer", answer });
+  $("setupIn").value = "";
+  if (!r.ok) chanShowErr(r.error); else { setupShow(r.setup); setupPoll(); }
+}
+$("setupIn").addEventListener("keydown", e => { if (e.key === "Enter") setupSend(false); });
+async function setupAct(action) { const r = await api("channel-setup", { action }); if (r.setup) setupShow(r.setup); }
+function setupClose() { clearTimeout(setupTimer); $("setupBox").classList.add("hidden"); loadChannels(); }
 
 function renderTether() {
   const t = S.tether;
