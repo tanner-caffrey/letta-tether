@@ -49,6 +49,20 @@ curl -fsSL https://raw.githubusercontent.com/tanner-caffrey/letta-tether/main/in
 
 You can switch between them in settings.
 
+## Messaging channels
+
+Letta can let people talk to your agent from Telegram, Discord, Slack, WhatsApp or Signal. Letta Tether can keep those running on this computer, alongside everything else.
+
+1. Set the channel up once with Letta's own setup, in a terminal: `letta channels configure telegram` (or discord, slack, whatsapp, signal). It asks for things like a bot token.
+2. In Letta Tether's settings, turn on **Run messaging channels on this computer**. Each channel you've set up gets its own switch, and shows whether it's running or has a problem.
+3. When someone new messages your bot, they get a pairing code back. Paste it under that channel, pick which agent answers, and press **Connect**.
+
+Channels you already set up with Letta on this computer show up by themselves. If you were running them some other way (`letta server --channels ...` in a terminal or a service), stop that first, or two copies will fight over the same bot.
+
+If one channel has a problem (an expired bot token, say), only that channel stops; your agent can still use this computer. Channels tied to a *local* agent can't run here (Letta Tether runs cloud agents); they're listed, without a switch.
+
+Command line: `letta-tether --headless --channels`.
+
 ## Updates
 
 Letta Tether updates itself: it checks GitHub twice a day, and when there's a new version it downloads it, checks it, and restarts into it within a few seconds. Your agents reconnect by themselves. You can turn this off in Settings ("Update Letta Tether automatically"); then the tray menu and the settings page offer **Update to vX** when there's one.

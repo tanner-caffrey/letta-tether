@@ -18,6 +18,7 @@ import (
 
 	"fyne.io/systray"
 
+	"github.com/tanner-caffrey/letta-tether/internal/channels"
 	"github.com/tanner-caffrey/letta-tether/internal/config"
 	"github.com/tanner-caffrey/letta-tether/internal/icons"
 	"github.com/tanner-caffrey/letta-tether/internal/runner"
@@ -146,6 +147,19 @@ func onReady(background bool) {
 
 	app.Apply = apply
 	app.Quit = systray.Quit
+	// which channels started: read from Letta's own logs, only those from our latest launch
+	var chanWatch *channels.Watch
+	var chanMu sync.Mutex
+	run.OnStart = func() {
+		chanMu.Lock()
+		chanWatch = channels.Snapshot(channels.ConfigDir())
+		chanMu.Unlock()
+	}
+	app.ChannelWatch = func() channels.Result {
+		chanMu.Lock()
+		defer chanMu.Unlock()
+		return chanWatch.Read()
+	}
 	app.Updates = updates
 
 	updates.Version = version
@@ -245,6 +259,8 @@ func pick(c config.Config) error {
 	}
 	run.Install = in
 	run.ComputerName = c.ComputerName
+	run.Channels = c.Channels
+	app.Channels = in // channel commands run with the same Letta
 	return nil
 }
 

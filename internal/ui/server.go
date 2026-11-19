@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/tanner-caffrey/letta-tether/internal/autostart"
+	"github.com/tanner-caffrey/letta-tether/internal/channels"
 	"github.com/tanner-caffrey/letta-tether/internal/config"
 	"github.com/tanner-caffrey/letta-tether/internal/runner"
 	"github.com/tanner-caffrey/letta-tether/internal/uninstall"
@@ -43,6 +44,12 @@ type App struct {
 	Quit  func()
 	// Updates is Letta Tether's own updater (nil in tests and dev builds).
 	Updates *update.Manager
+	// Channels is the Letta install channel commands run with (set when Letta is picked).
+	Channels runner.Install
+	// ChannelWatch reads which channels started (set by the runner's OnStart).
+	ChannelWatch func() channels.Result
+	// letta runs a letta subcommand; tests replace it.
+	letta channels.Letter
 
 	mu      sync.Mutex
 	cfg     config.Config
@@ -121,6 +128,11 @@ func (a *App) Start(c config.Config) (string, error) {
 		go a.Updates.ApplyFromPage(context.Background()) // the page follows along through status
 		w.Write([]byte(`{"ok":true}`))
 	}))
+	mux.HandleFunc("/api/channels", a.guard(a.channelsList))
+	mux.HandleFunc("/api/channel-switch", a.guard(a.channelSwitch))
+	mux.HandleFunc("/api/channel-pair", a.guard(a.channelPair))
+	mux.HandleFunc("/api/channel-install", a.guard(a.channelInstall))
+	mux.HandleFunc("/api/agents", a.guard(a.agentsList))
 	mux.HandleFunc("/api/uninstall-plan", a.guard(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(uninstall.MakePlan(runner.AppDir()))

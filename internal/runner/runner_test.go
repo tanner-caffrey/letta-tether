@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -160,5 +161,33 @@ func TestSignInWaitsForSlowStart(t *testing.T) {
 	}
 	if p := s.Snapshot(); p.Phase == "already" || p.Code != "SLOW-1" {
 		t.Fatalf("slow Letta that needed a sign-in ended as phase %q code %q", p.Phase, p.Code)
+	}
+}
+
+// Channels on: Letta is started in "run whatever is enabled" mode (a broken channel can't
+// take the connection down). Off: no channel switch at all, so nothing changes for people
+// who don't use channels.
+func TestChannelsSwitch(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		dir := t.TempDir()
+		log := filepath.Join(dir, "out.log")
+		starts := 0
+		r := &Runner{Install: fakeInstall(t, dir, "env:LETTA_RESTORE_ENABLED_CHANNELS;print:connected;hang"), RetryWait: time.Hour,
+			Channels: on, LogPath: log, OnStart: func() { starts++ }}
+		r.Start()
+		waitFor(3*time.Second, func() bool { s, _ := r.State(); return s == Connected })
+		r.Stop()
+		killAll(dir)
+		b, _ := os.ReadFile(log)
+		want := "LETTA_RESTORE_ENABLED_CHANNELS="
+		if on {
+			want += "1"
+		}
+		if !strings.Contains(string(b), want+"\n") {
+			t.Fatalf("channels=%v: Letta saw %q", on, b)
+		}
+		if starts != 1 {
+			t.Fatalf("OnStart called %d times", starts)
+		}
 	}
 }

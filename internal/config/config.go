@@ -22,6 +22,9 @@ type Config struct {
 	// AutoUpdate: install new Letta Tether versions by itself. A pointer so "never set"
 	// (older settings files) can mean on, while an explicit false stays off.
 	AutoUpdate *bool `json:"auto_update,omitempty"`
+	// Channels: also run the messaging channels switched on in Letta (Telegram, Discord...).
+	// Off by default: most people don't use them, and it changes nothing until they do.
+	Channels bool `json:"channels,omitempty"`
 }
 
 // AutoUpdateOn says whether automatic updates are on (default: on).

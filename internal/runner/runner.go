@@ -47,6 +47,24 @@ func (i Install) String() string {
 	return fmt.Sprintf("%s Letta %s", i.Kind, i.Version)
 }
 
+// Run runs a short letta command (like `channels status`) and returns what it printed.
+func (i Install) Run(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := i.command(ctx, args...)
+	var errb strings.Builder
+	cmd.Stderr = &errb
+	out, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(errb.String())
+		if j := strings.LastIndexByte(msg, '\n'); j >= 0 {
+			msg = msg[j+1:]
+		}
+		if msg != "" {
+			return out, fmt.Errorf("%w: %s", err, msg)
+		}
+	}
+	return out, err
+}
+
 // command builds the exec.Cmd for `letta <args...>`.
 func (i Install) command(ctx context.Context, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, i.Node, append([]string{i.Script}, args...)...)
@@ -161,6 +179,12 @@ type Runner struct {
 	// RetryWait is the first wait before restarting a crashed listener (default 5s);
 	// it doubles each time, up to 5 minutes.
 	RetryWait time.Duration
+	// Channels: also run the messaging channels switched on in Letta (Telegram etc.).
+	// Uses Letta's "start whatever is enabled" mode, where one broken channel can't take
+	// the connection down (naming them with --channels would).
+	Channels bool
+	// OnStart is called just before each launch (the channels watcher snapshots logs).
+	OnStart func()
 
 	mu      sync.Mutex
 	state   State
@@ -287,6 +311,12 @@ func (r *Runner) runOnce(ctx context.Context) (why string, connected bool) {
 		args = append(args, "--computer-name", r.ComputerName)
 	}
 	cmd := r.Install.command(ctx, args...)
+	if r.Channels {
+		cmd.Env = append(cmd.Env, "LETTA_RESTORE_ENABLED_CHANNELS=1")
+	}
+	if r.OnStart != nil {
+		r.OnStart()
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err.Error(), false

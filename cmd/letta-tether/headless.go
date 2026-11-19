@@ -28,6 +28,9 @@ func runHeadless(args []string) int {
 		switch args[i] {
 		case "--no-auto-update":
 			autoUpdate = false
+		case "--channels":
+			// run the channels switched on in Letta (set them up with `letta channels configure`)
+			c.Channels = true
 		case "--name":
 			if i+1 < len(args) {
 				c.ComputerName = config.CleanName(args[i+1])

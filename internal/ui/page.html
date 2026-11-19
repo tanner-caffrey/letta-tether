@@ -132,6 +132,21 @@
     <div id="dl2" class="hidden"><div class="bar"><div id="dlBar2"></div></div><p class="dim" id="dlText2"></p></div>
   </section>
 
+  <section class="card step" data-step="4" id="chanCard">
+    <h2>Messaging channels</h2>
+    <p>Letta can let people talk to your agent from Telegram, Discord, Slack, WhatsApp or Signal. The connection runs here, on this computer, alongside everything else.</p>
+    <label class="choice"><input type="checkbox" id="chanAll"> <b>Run messaging channels on this computer</b>
+      <small>Runs the channels you've switched on below. If one has a problem (an expired bot token, say), only that channel stops: your agent can still use this computer.</small></label>
+    <div id="chanList" class="dim">Loading…</div>
+    <p id="chanErr" class="err hidden"></p>
+    <details style="margin-top:10px"><summary>Setting up a new channel</summary>
+      <p>Each one is set up once, with Letta's own setup in a terminal (it asks for things like a bot token):</p>
+      <p><code>letta channels configure telegram</code> <span class="dim">(or discord, slack, whatsapp, signal)</span></p>
+      <p class="dim">Then come back here and press Refresh. Messages from someone new get a pairing code back; paste it under that channel to connect them to an agent.</p>
+      <button onclick="loadChannels()">Refresh</button>
+    </details>
+  </section>
+
   <section class="card step" data-step="4" id="tetherCard">
     <h2>Letta Tether updates</h2>
     <p>This is Letta Tether itself, the small app by your clock, not Letta. <span class="dim">You're on <b id="tvRunning"></b>.</span></p>
@@ -190,7 +205,7 @@ function go(n) {
   $("steps").innerHTML = [0,1,2,3].map(i => `<span class="${i <= n ? "on" : ""}"></span>`).join("");
   $("steps").classList.toggle("hidden", n === 4);
   if (n === 3 && !$("name").value) $("name").value = S.config.computer_name;
-  if (n === 4) { fillSettings(); loadUninstallPlan(); }
+  if (n === 4) { fillSettings(); loadUninstallPlan(); loadChannels(); }
 }
 
 async function prepare() {
@@ -212,6 +227,71 @@ async function finish() {
   const c = { ...S.config, setup_done: true, computer_name: $("name").value.trim(), start_at_login: $("auto").checked, paused: false };
   try { await api("save", c); $("saveErr").classList.add("hidden"); go(4); }
   catch (e) { $("saveErr").textContent = e.message; $("saveErr").classList.remove("hidden"); }
+}
+
+let agents = null;
+function esc(x) { return String(x ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+const chanNames = { telegram: "Telegram", discord: "Discord", slack: "Slack", whatsapp: "WhatsApp", signal: "Signal" };
+async function loadChannels() {
+  try {
+    const r = await api("channels");
+    if (!r.ok) { $("chanList").textContent = r.error; return; }
+    $("chanAll").checked = r.on;
+    const set = r.channels.filter(c => c.configured && c.accounts && c.accounts.length);
+    const notSet = r.channels.filter(c => !c.configured && chanNames[c.id]).map(c => chanNames[c.id]);
+    let h = "";
+    for (const c of set) {
+      for (const a of c.accounts) {
+        const key = c.id + "|" + a.id;
+        let st = "";
+        if (a.local_agent) {
+          h += `<div class="choice" style="display:block"><b>${esc(chanNames[c.id] || c.id)}</b> <span class="dim">${esc(a.name)}</span>
+            <small>Answers with a local agent, so Letta Tether can't run it (it runs cloud agents). Keep running it the way you set it up.</small></div>`;
+          continue;
+        }
+        if (r.on && a.enabled) st = a.problem ? `<span class="err">problem: ${esc(a.problem)}</span>` : a.running ? `<span style="color:#2a8a4a">running</span>` : `<span class="dim">starting…</span>`;
+        h += `<div class="choice" style="display:block"><label><input type="checkbox" data-key="${esc(key)}" ${a.enabled ? "checked" : ""} onchange="chanFlip(this)">
+          <b>${esc(chanNames[c.id] || c.id)}</b> <span class="dim">${esc(a.name)}</span></label> ${st}
+          ${c.runtime_installed ? "" : `<button onclick="chanInstall('${esc(c.id)}')">Install what it needs</button>`}
+          <div class="row" style="margin-top:6px"><input type="text" placeholder="Pairing code" maxlength="12" style="width:9em" id="pc-${esc(key)}">
+          <select id="pa-${esc(key)}"><option value="">Which agent answers?</option></select>
+          <button onclick="chanPair('${esc(c.id)}','${esc(a.id)}')">Connect</button></div></div>`;
+      }
+    }
+    if (!set.length) h += `<p class="dim">No channels set up yet.</p>`;
+    if (notSet.length) h += `<p class="dim">Not set up: ${esc(notSet.join(", "))}.</p>`;
+    $("chanList").innerHTML = h;
+    fillAgents();
+  } catch (e) { $("chanList").textContent = "Couldn't ask Letta about channels."; }
+}
+async function fillAgents() {
+  if (!agents) { try { const r = await api("agents"); agents = r.ok ? r.agents : []; } catch (e) { agents = []; } }
+  document.querySelectorAll("select[id^=pa-]").forEach(sel => {
+    if (sel.options.length > 1) return;
+    for (const g of agents) { const o = document.createElement("option"); o.value = g.id; o.textContent = g.name; sel.appendChild(o); }
+  });
+}
+function chanShowErr(m) { $("chanErr").textContent = m; $("chanErr").classList.toggle("hidden", !m); }
+async function chanFlip(box) {
+  const [channel, account] = box.dataset.key.split("|");
+  const r = await api("channel-switch", { channel, account, on: box.checked });
+  chanShowErr(r.ok ? "" : r.error); setTimeout(loadChannels, 4000);
+}
+$("chanAll").addEventListener("change", async () => {
+  const r = await api("channel-switch", { all: $("chanAll").checked });
+  chanShowErr(r.ok ? "" : r.error); setTimeout(loadChannels, 4000);
+});
+async function chanPair(channel, account) {
+  const key = channel + "|" + account;
+  const code = document.getElementById("pc-" + key).value, agent = document.getElementById("pa-" + key).value;
+  const r = await api("channel-pair", { channel, account, code, agent });
+  chanShowErr(r.ok ? "" : r.error);
+  if (r.ok) { document.getElementById("pc-" + key).value = ""; chanShowErr(""); alert("Connected. Messages from that chat now go to the agent you picked."); }
+}
+async function chanInstall(channel) {
+  chanShowErr("Installing…");
+  const r = await api("channel-install", { channel });
+  chanShowErr(r.ok ? "" : r.error); loadChannels();
 }
 
 function renderTether() {

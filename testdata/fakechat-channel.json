@@ -1,0 +1,1 @@
+{ "id": "fakechat", "displayName": "Fake chat (Tether test)", "entry": "./plugin.mjs", "runtimePackages": [], "runtimeModules": [] }

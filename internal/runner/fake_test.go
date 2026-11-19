@@ -52,6 +52,9 @@ func fakeListener() {
 			fmt.Printf(`{"lettaLifecycleProtocol":1,"state":%q}`+"\n", arg)
 		case "say":
 			fmt.Println(arg)
+		case "env":
+			// report one environment variable: env:NAME prints NAME=value (or NAME= if unset)
+			fmt.Println(arg + "=" + os.Getenv(arg))
 		case "sleep":
 			ms, _ := strconv.Atoi(arg)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
